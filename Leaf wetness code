@@ -1,0 +1,101 @@
+--Leaf Wetness---
+
+import numpy as np
+from sklearn.ensemble import RandomForestClassifier
+from sklearn.model_selection import train_test_split
+from sklearn.metrics import classification_report, confusion_matrix
+
+
+ndvi = np.load("NDVI_singur_monsoon.npy")
+ndmi = np.load("NDMI_singur_monsoon.npy")
+
+print("NDVI shape:", ndvi.shape)
+print("NDMI shape:", ndmi.shape)
+
+
+def flatten_array(arr):
+    if arr.ndim == 2:   
+        return arr.ravel()
+    elif arr.ndim == 3: 
+        return arr.reshape(-1)
+    else:               
+        return arr
+
+ndvi_flat = flatten_array(ndvi)
+ndmi_flat = flatten_array(ndmi)
+
+
+
+plant_vigor = np.zeros_like(ndvi_flat, dtype=int)
+plant_vigor[ndvi_flat >= 0.5] = 1   
+
+
+leaf_wetness_binary = plant_vigor.copy()
+
+np.save("plant_vigor_labels.npy", plant_vigor)
+np.save("leaf_wetness_binary_labels.npy", leaf_wetness_binary)
+
+print("\nProxy labels created:")
+print(" - plant_vigor_labels.npy (0=Low, 1=High)")
+print(" - leaf_wetness_binary_labels.npy (0=Low Wetness, 1=High Wetness)")
+
+
+n_samples = 50000  
+if len(ndvi_flat) > n_samples:
+    idx = np.random.choice(len(ndvi_flat), size=n_samples, replace=False)
+    X = np.column_stack([ndvi_flat[idx], ndmi_flat[idx]])
+    y = leaf_wetness_binary[idx]
+else:
+    X = np.column_stack([ndvi_flat, ndmi_flat])
+    y = leaf_wetness_binary
+
+
+X_train, X_test, y_train, y_test = train_test_split(
+    X, y, test_size=0.2, random_state=42, stratify=y
+)
+
+clf = RandomForestClassifier(n_estimators=50, max_depth=8, random_state=42)
+clf.fit(X_train, y_train)
+y_pred = clf.predict(X_test)
+
+
+print(classification_report(y_test, y_pred, target_names=["Low Wetness", "High Wetness"], digits=3))
+print("Confusion Matrix:\n", confusion_matrix(y_test, y_pred))
+
+
+full_predictions = clf.predict(np.column_stack([ndvi_flat, ndmi_flat]))
+np.save("leaf_wetness_pred.npy", full_predictions)
+
+print("\nPredictions saved as leaf_wetness_pred.npy")
+
+--PREDICTION PART---
+
+ alerts = {
+    "Low Wetness":  "⚠️ Alert: Leaf wetness is critically low!",
+    "High Wetness": "✅ Good wetness level, conditions are healthy."
+}
+
+while True:
+    try:
+        ndvi_val = input("\n NDVI : ")
+        if ndvi_val.lower() == 'quit':  
+            print("Exiting...")
+            break
+
+        ndvi_val = float(ndvi_val)
+        ndmi_val = float(input(" NDMI : "))
+
+        user_input = np.array([[ndvi_val, ndmi_val]])
+
+        pred = clf.predict(user_input)[0]
+
+        labels = {0: "Low Wetness", 1: "High Wetness"}
+        predicted_label = labels[pred]
+
+        
+        print(f"\nResult: {predicted_label}")
+        print("Alert:", alerts[predicted_label])
+
+    except Exception as e:
+        print("Invalid input, try again!", e)
+
